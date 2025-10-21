@@ -28,7 +28,7 @@
 
       nixosConfigurations = {
         modern = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
+          system = "aarch64-linux";
           modules = [
             self.nixosModules.default
             { wsl.enable = true; }
@@ -36,7 +36,7 @@
         };
 
         legacy = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
+          system = "aarch64-linux";
           modules = [
             self.nixosModules.default
             {
@@ -47,7 +47,7 @@
         };
 
         test = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
+          system = "aarch64-linux";
           modules = [
             self.nixosModules.default
             ({ config, pkgs, ... }: {
