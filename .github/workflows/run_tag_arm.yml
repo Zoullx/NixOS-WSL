@@ -1,0 +1,123 @@
+name: Create tag
+run-name: ${{ inputs.tag }}-arm
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The tag to update for arm"
+        required: true
+        default: ""
+        type: string
+      latest:
+        description: "Whether to mark the release as latest"
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  tag:
+    name: Create tag for arm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          token: ${{ secrets.WORKFLOW_TOKEN }}
+          ref: "checkout-tags/${{ inputs.tag }}"
+
+      - name: Update for arm
+        run: |
+          sed -i 's/system = "x86_64-linux"/system = "aarch64-linux"/' flake.nix
+
+      - name: Create tag for arm
+        uses: EndBug/add-and-commit@a94899bca583c204427a224a7af87c02f9b325d5 # v9.1.4
+        with:
+          message: Update to build for arm
+          push: true
+          tag: "${{ inputs.tag }}-arm"
+
+  build:
+    name: Build tarball for arm
+    runs-on: ubuntu-24.04-arm
+    needs:
+      - tag
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          token: ${{ secrets.WORKFLOW_TOKEN }}
+          ref: "checkout-tags/${{ inputs.tag }}"
+
+      - name: Check for nix ✅
+        id: check-nix
+        shell: bash
+        run: |
+          if command -v nix &> /dev/null
+          then
+            echo "nix-found=true" | tee -a $GITHUB_OUTPUT
+          else
+            echo "nix-found=false" | tee -a $GITHUB_OUTPUT
+          fi
+
+      - name: Install Nix ❄️
+        if: ${{ steps.check-nix.outputs.nix-found != 'true' }}
+        uses: cachix/install-nix-action@fd24c48048070c1be9acd18c9d369a83f0fe94d7 # v31.8.1
+        with:
+          github_access_token: ${{ github.token }}
+
+      - name: Summary Headline 📝
+        run: echo '## NixOS-WSL ${{ inputs.tag }}-arm' >> $GITHUB_STEP_SUMMARY
+
+      - name: Get configuration to build
+        id: nix-configuration
+        run: |
+          JSON=$(mktemp)
+          nix eval ".#nixosConfigurations" --apply "x: builtins.attrNames x" --json > $JSON
+          if "$(jq 'any(. == "default")' $JSON)" == "true"
+          then
+            echo "configuration=default" | tee -a $GITHUB_OUTPUT
+          elif "$(jq 'any(. == "modern")' $JSON)" == "true"
+          then
+            echo "configuration=modern" | tee -a $GITHUB_OUTPUT
+          elif "$(jq 'any(. == "legacy")' $JSON)" == "true"
+          then
+            echo "configuration=legacy" | tee -a $GITHUB_OUTPUT
+          else
+            echo "configuration=" | tee -a $GITHUB_OUTPUT
+          fi
+
+      - name: Build .#nixosConfigurations.${{ steps.nix-configuration.outputs.configuration }}.config.system.build.tarballBuilder 🛠️
+        if: ${{ steps.nix-configuration.outputs.configuration != '' }}
+        id: build
+        shell: bash
+        run: |
+          JSON=$(mktemp)
+          (nix build -L .#nixosConfigurations.${{ steps.nix-configuration.outputs.configuration }}.config.system.build.tarballBuilder --no-link --json >$JSON) |& sed -uE 's/^(trace: +)?warning:(\s+|$)/::warning::/;s/^(trace: +)?error:(\s+|$)/::error::/;s/^trace:(\s+|$)/::notice::trace: /'
+          DRV=$(jq -r .[0].outputs.out <$JSON)
+          echo "derivation=$DRV" >> $GITHUB_OUTPUT
+          echo "- Built \`$DRV\`" >> $GITHUB_STEP_SUMMARY
+          echo "    - $(nix show-derivation -r $DRV | jq 'keys[]' | wc -l) derivations in closure" >> $GITHUB_STEP_SUMMARY
+          echo "    - $(nix path-info -S --json $DRV | jq -r '.[0].closureSize' | xargs numfmt --to=iec-i --suffix=B --format='%.3f') total size" >> $GITHUB_STEP_SUMMARY
+
+      - name: Build tarball 📦
+        if: ${{ steps.nix-configuration.outputs.configuration != '' }}
+        shell: bash
+        run: sudo ${{ steps.build.outputs.derivation }}/bin/nixos-wsl-tarball-builder nixos.wsl
+
+      - name: Generate Checksums 🔑
+        if: ${{ steps.nix-configuration.outputs.configuration != '' }}
+        run: |
+          sha256sum nixos.wsl > nixos.wsl.sha256
+
+      - name: Attach to Release 📎
+        if: ${{ steps.nix-configuration.outputs.configuration != '' }}
+        uses: softprops/action-gh-release@6da8fa9354ddfdc4aeace5fc48d7f679b5214090 # v2.4.1
+        with:
+          name: "${{ inputs.tag }}-arm"
+          tag_name: "${{ inputs.tag }}-arm"
+          make_latest: ${{ inputs.latest }}
+          token: ${{ secrets.WORKFLOW_TOKEN }}
+          files: |
+            nixos.wsl
+            nixos.wsl.sha256
