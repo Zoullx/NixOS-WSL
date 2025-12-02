@@ -67,10 +67,6 @@
             })
           ];
         };
-
-        modern = lib.warn "nixosConfigurations.modern has been renamed to nixosConfigurations.default" self.nixosConfigurations.default;
-
-        legacy = throw "nixosConfigurations.legacy has been removed as syschdemd has been removed";
       };
 
       checks = forAllSystems (
@@ -79,7 +75,6 @@
           args = { inherit inputs; };
         in
         {
-          dotnet-format = pkgs.callPackage ./checks/dotnet-format.nix args;
           nixpkgs-fmt = pkgs.callPackage ./checks/nixpkgs-fmt.nix args;
           nixpkgs-input = pkgs.callPackage ./checks/nixpkgs-input.nix args;
           rustfmt = pkgs.callPackage ./checks/rustfmt.nix args;
