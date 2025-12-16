@@ -19,7 +19,7 @@
     {
       // WSL repo checkout job
       customType: "regex",
-      fileMatch: [".github\\/.+\\.ya?ml$"],
+      managerFilePatterns: [".github\\/.+\\.ya?ml$"],
       matchStrings: [
         "repository:\\s*(?<depName>[^/\\s]+/[^/\\s]+)\\s*ref:\\s*(?<currentValue>[^\\s]+)",
       ],
@@ -48,9 +48,16 @@
     {
       // Automerge minor and patch updates for _official_ Actions
       matchManagers: ["github-actions"],
+      matchBaseBranches: ["main"],
       matchPackageNames: ["/^actions//"],
       matchUpdateTypes: ["minor", "patch"],
       automerge: true,
+    },
+    {
+      // Ignore github actions updates on release branches
+      matchBaseBranches: ["/^release-.+$/"],
+      matchManagers: ["github-actions"],
+      enabled: false,
     },
     {
       // Automerge dependency pinning PRs (on main)
